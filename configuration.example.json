@@ -1,0 +1,18 @@
+{
+	"username": "your-sim-username",
+	"password": "your-sim-pasword",
+	"token": "your-discord-token",
+	"channel": "your-discord-channel-id",
+	"reaction": "your-discord-emote-name:your-discord-emote-id",
+	"contests": [ 1337, 7331 ],
+	"users": [
+		{
+			"name": "Johny Depp",
+			"pronouns": "he/him"
+		},
+		{
+			"name": "Ambear Heard",
+			"pronouns": "she/her"
+		}
+	]
+}
