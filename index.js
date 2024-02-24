@@ -1,5 +1,5 @@
 const { request } = require("https");
-const { readFileSync } = require("fs");
+const { readFileSync, writeFileSync, existsSync } = require("fs");
 const { username, password, token, channel, reaction, users, contests } = require("./configuration.json");
 
 let session;
@@ -55,6 +55,7 @@ const fetchProblems = (contestId) => {
 
 		});
 
+		result.on("error", reject);
 		result.end(`csrf_token=${csrfToken}`);
 	});
 };
@@ -78,6 +79,7 @@ const fetchRanking = (contestId) => {
 
 			response.on("end", () => {
 				if (response.statusCode !== 200) {
+					console.log(contestId);
 					reject(new Error(`Status ${response.statusCode}: ${buffer.toString()}`));
 					return;
 				}
@@ -106,6 +108,7 @@ const fetchRanking = (contestId) => {
 
 		});
 
+		result.on("error", reject);
 		result.end(`csrf_token=${csrfToken}`);
 	});
 };
@@ -186,6 +189,7 @@ const fetchToken = () => {
 			response.on("error", reject);
 		});
 
+		result.on("error", reject);
 		result.end([
 			`username=${encodeURIComponent(username)}`,
 			`password=${encodeURIComponent(password)}`,
@@ -220,11 +224,11 @@ const react = (messageId) => {
 			response.on("error", reject);
 		});
 
+		result.on("error", reject);
 		result.end();
 	});
 
 };
-
 const notify = (user, pronouns, contest, problem) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://discord.com/api/channels/${channel}/messages`, {
@@ -258,6 +262,7 @@ const notify = (user, pronouns, contest, problem) => {
 			response.on("error", reject);
 		});
 
+		result.on("error", reject);
 		result.end(JSON.stringify({
 			embeds: [
 				{
@@ -291,6 +296,8 @@ const getChanges = async () => {
 				}
 			}
 		}
+
+		writeFileSync("state.json", JSON.stringify(newState));
 	} catch (error) {
 		console.log("Failed to get changes!", error);
 	}
@@ -323,6 +330,7 @@ const testToken = () => {
 			response.on("error", reject);
 		});
 
+		result.on("error", reject);
 		result.end();
 	});
 } ;
@@ -331,7 +339,13 @@ const initialize = async () => {
 	try {
 		await fetchToken();
 		await testToken();
-		state = await fetchState();
+
+		if (!existsSync("state.json")) {
+
+		} else {
+
+		}
+		state = JSON.parse(readFileSync("state.json"));
 		getChanges();
 	} catch (error) {
 		console.error("Failed to initialize!", error);
