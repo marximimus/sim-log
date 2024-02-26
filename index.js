@@ -12,7 +12,7 @@ let csrfToken;
 let userId;
 
 /** @type {Map<number, Map<string, Set<number>>>} */
-let state = new Map();
+let state;
 
 const pronounsTranslations = {
 	"he/him": "wbił",
@@ -455,8 +455,13 @@ const initialize = async () => {
 		await fetchToken();
 		await testToken();
 
-		if (existsSync("state.json"))
+		if (existsSync("state.json")) {
+			state = new Map();
 			readState();
+		} else {
+			state = await fetchState();
+			saveState();
+		}
 
 		getChanges();
 	} catch (error) {
