@@ -23,7 +23,7 @@ const pronounsTranslations = {
 let pronouns = new Map();
 
 for (const user of users)
-	pronouns.set(user.name, /** @type {keyof pronounsTranslations} */ (user.pronouns)), console.log(user.name);
+	pronouns.set(user.name, /** @type {keyof pronounsTranslations} */ (user.pronouns));
 
 /**
  * @param {number} contestId
