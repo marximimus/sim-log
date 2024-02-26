@@ -1,18 +1,37 @@
 const { request } = require("https");
-const { readFileSync, writeFileSync, existsSync } = require("fs");
+const { readFileSync, writeFileSync, existsSync, stat } = require("fs");
 const { username, password, token, channel, reaction, users, contests } = require("./configuration.json");
 
+/** @type {string} */
 let session;
+
+/** @type {string} */
 let csrfToken;
+
+/** @type {number} */
 let userId;
 
-let state;
+/** @type {Map<number, Map<string, Set<number>>>} */
+let state = new Map();
 
 const pronounsTranslations = {
 	"he/him": "wbił",
 	"she/her": "wbiła"
 };
 
+/** @type {Map<string, keyof pronounsTranslations>} */
+let pronouns = new Map();
+
+for (const user of users)
+	pronouns.set(user.name, /** @type {keyof pronounsTranslations} */ (user.pronouns)), console.log(user.name);
+
+/**
+ * @param {number} contestId
+ * @returns {Promise<{
+ * 	contestName: string;
+ * 	problems: Map<number, string>;
+ * }>}
+ */
 const fetchProblems = (contestId) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://sim.13lo.pl/api/contest/c${contestId}`, {
@@ -36,11 +55,13 @@ const fetchProblems = (contestId) => {
 				}
 
 				try {
-					const problems = JSON.parse(buffer);
-					const result = {};
+					const problems = JSON.parse(buffer.toString());
 
-					for (const [ id, round, problem, canView, label, name ] of problems[3])
-						result[id] = name;
+					/** @type {Map<number, string>} */
+					const result = new Map();
+
+					for (const [ id, _round, _problem, _canView, _label, name ] of problems[3])
+						result.set(id, name);
 
 					resolve({
 						contestName: problems[1][1],
@@ -60,7 +81,10 @@ const fetchProblems = (contestId) => {
 	});
 };
 
-
+/**
+ * @param {number} contestId
+ * @returns {Promise<Map<string, Set<number>>>}
+ */
 const fetchRanking = (contestId) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://sim.13lo.pl/api/contest/c${contestId}/ranking`, {
@@ -85,17 +109,23 @@ const fetchRanking = (contestId) => {
 				}
 
 				try {
-					const ranking = JSON.parse(buffer);
-					const result = {};
+					const ranking = JSON.parse(buffer.toString());
+
+					/** @type {Map<string, Set<number>>} */
+					const result = new Map();
 
 					for (let index = 1; index < ranking.length; index++) {
-						const solved = [];
+						/** @type {Set<number>} */
+						const solved = new Set();
 
-						for (const [ id, round, problem, status, score ] of ranking[index][2])
-							if (score === 100)
-								solved.push(problem);
+						for (const [ _id, _round, problem, _status, score ] of ranking[index][2]) {
+							if (score !== 100)
+								continue;
 
-						result[ranking[index][1]] = solved;
+							solved.add(problem);
+						}
+
+						result.set(ranking[index][1], solved);
 					}
 
 					resolve(result);
@@ -113,14 +143,15 @@ const fetchRanking = (contestId) => {
 	});
 };
 
+/**
+ * @returns {Promise<Map<number, Map<string, Set<number>>>>}
+ */
 const fetchState = async () => {
-	const result = [];
-
-	for (const { name } of users)
-		result[name] = [];
+	/** @type {Map<number, Map<string, Set<number>>>} */
+	const result = new Map();
 
 	for (const contestId of contests)
-		result[contestId] = await fetchRanking(contestId);
+		result.set(contestId, await fetchRanking(contestId));
 
 	return result;
 };
@@ -135,10 +166,10 @@ const fetchToken = () => {
 			}
 		}, (response) => {
 			if (response.statusCode === 200) {
-				session = null;
-				csrfToken = null;
+				let hasSession = false;
+				let hasCsrtToken = false;
 
-				for (const cookie of response.headers["set-cookie"]) {
+				for (const cookie of response.headers["set-cookie"] || []) {
 					const data = cookie.split("; ")[0];
 					const index = data.indexOf("=");
 
@@ -148,13 +179,16 @@ const fetchToken = () => {
 					const name = data.substring(0, index);
 					const value = data.substring(index + 1);
 
-					if (name === "session")
+					if (name === "session") {
 						session = value;
-					else if (name === "csrf_token")
+						hasSession = true;
+					} else if (name === "csrf_token") {
 						csrfToken = value;
+						hasCsrtToken = true;
+					}
 				}
 
-				if (!session || !csrfToken)
+				if (!hasSession || !hasCsrtToken)
 					reject(new Error("Missing cookies!"));
 
 			}
@@ -172,7 +206,7 @@ const fetchToken = () => {
 				}
 
 				try {
-					userId = JSON.parse(buffer).session.user_id;
+					userId = JSON.parse(buffer.toString()).session.user_id;
 
 					if (typeof userId !== "number") {
 						reject(new Error("Missing user id!"));
@@ -183,7 +217,7 @@ const fetchToken = () => {
 					return;
 				}
 
-				resolve();
+				resolve(undefined);
 			});
 
 			response.on("error", reject);
@@ -198,6 +232,9 @@ const fetchToken = () => {
 	});
 };
 
+/**
+ * @param {string} messageId
+ */
 const react = (messageId) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://discord.com/api/channels/${channel}/messages/${messageId}/reactions/${reaction}/@me`, {
@@ -207,7 +244,7 @@ const react = (messageId) => {
 			}
 		}, (response) => {
 			if (response.statusCode === 204) {
-				resolve();
+				resolve(undefined);
 				return;
 			}
 
@@ -227,8 +264,14 @@ const react = (messageId) => {
 		result.on("error", reject);
 		result.end();
 	});
-
 };
+
+/**
+ * @param {string} user
+ * @param {keyof pronounsTranslations} pronouns
+ * @param {string} contest
+ * @param {string} problem
+ */
 const notify = (user, pronouns, contest, problem) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://discord.com/api/channels/${channel}/messages`, {
@@ -251,12 +294,12 @@ const notify = (user, pronouns, contest, problem) => {
 				}
 
 				try {
-					await react(JSON.parse(buffer).id);
+					await react(JSON.parse(buffer.toString()).id);
 				} catch (error) {
 					console.error("Failed to add reaction!", error);
 				}
 
-				resolve();
+				resolve(undefined);
 			});
 
 			response.on("error", reject);
@@ -274,30 +317,102 @@ const notify = (user, pronouns, contest, problem) => {
 	});
 };
 
+/**
+ * @typedef {{
+ * 	contestId: number;
+ * 	data: {
+ * 		name: string;
+ * 		problems: number[];
+ * 	}[];
+ * }[]} State
+ */
+
+const saveState = () => {
+	/** @type {State} */
+	const data = [];
+
+	for (const [ contestId, contestData ] of state) {
+		/**
+		 * @type {{
+		 * 	name: string;
+		 * 	problems: number[];
+		 * }[]}
+		 */
+		const rawContestData = [];
+
+		for (const [ userName, userData ] of contestData) {
+			rawContestData.push({
+				name: userName,
+				problems: [ ...userData ]
+			})
+		}
+
+		data.push({
+			contestId,
+			data: rawContestData
+		});
+	}
+
+	writeFileSync("state.json", JSON.stringify(data, null, "\t"));
+};
+
+const readState = () => {
+	/** @type {State} */
+	const data = JSON.parse(readFileSync("state.json").toString());
+
+	for (const contest of data) {
+		/** @type {Map<string, Set<number>>} */
+		const contestEntry = new Map();
+
+		for (const user of contest.data) {
+			/** @type {Set<number>} */
+			const problems = new Set();
+
+			for (const problem of user.problems)
+				problems.add(problem);
+
+			contestEntry.set(user.name, problems);
+		}
+
+		state.set(contest.contestId, contestEntry);
+	}
+};
+
 const getChanges = async () => {
 	try {
 		const newState = await fetchState();
 
-		for (const contestId of contests) {
+		for (const [ contestId, contestData ] of newState) {
 			const { contestName, problems } = await fetchProblems(contestId);
 
-			for (const { name, pronouns } of users) {
-				if (!newState[contestId][name])
-					continue;
+			let contestEntry = state.get(contestId);
+			if (!contestEntry) {
+				contestEntry = new Map();
+				state.set(contestId, contestEntry);
+			}
 
-				if (!state[contestId][name])
-					state[contestId][name] = [];
+			for (const [ userName, userData ] of contestData) {
+				let userEntry = contestEntry.get(userName);
+				if (!userEntry) {
+					userEntry = new Set();
+					contestEntry.set(userName, userEntry);
+				}
 
-				for (const problem of newState[contestId][name]) {
-					if (!state[contestId][name].includes(problem)) {
-						await notify(name, pronouns, contestName, problems[problem]);
-						state[contestId][name].push(problem);
-					}
+				for (const problemId of userData) {
+					if (userEntry.has(problemId))
+						continue;
+					userEntry.add(problemId);
+					const problemName = problems.get(problemId) || "";
+					console.log(userName, problems.get(problemId));
+					let userPronouns = pronouns.get(userName);
+
+					if (userPronouns)
+						await notify(userName, userPronouns, contestName, problemName);
 				}
 			}
 		}
 
-		writeFileSync("state.json", JSON.stringify(newState));
+		saveState();
 	} catch (error) {
 		console.log("Failed to get changes!", error);
 	}
@@ -313,7 +428,7 @@ const testToken = () => {
 			}
 		}, (response) => {
 			if (response.statusCode === 200) {
-				resolve();
+				resolve(undefined);
 				return;
 			}
 
@@ -333,19 +448,16 @@ const testToken = () => {
 		result.on("error", reject);
 		result.end();
 	});
-} ;
+};
 
 const initialize = async () => {
 	try {
 		await fetchToken();
 		await testToken();
 
-		if (!existsSync("state.json")) {
+		if (existsSync("state.json"))
+			readState();
 
-		} else {
-
-		}
-		state = JSON.parse(readFileSync("state.json"));
 		getChanges();
 	} catch (error) {
 		console.error("Failed to initialize!", error);
@@ -354,3 +466,4 @@ const initialize = async () => {
 };
 
 initialize();
+
