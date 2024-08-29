@@ -272,8 +272,10 @@ const react = (messageId) => {
  * @param {string} contest
  * @param {number} problemId
  * @param {string} problemName
+ * @param {number} done
+ * @param {number} total
  */
-const notify = (user, pronouns, contest, problemId, problemName) => {
+const notify = (user, pronouns, contest, problemId, problemName, done, total) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://discord.com/api/channels/${channel}/messages`, {
 			method: "POST",
@@ -311,7 +313,10 @@ const notify = (user, pronouns, contest, problemId, problemName) => {
 			embeds: [
 				{
 					description: `**${user}** właśnie ${pronounsTranslations[pronouns]} zadanie [**${problemName}**](https://sim.13lo.pl/c/p${problemId}) z contestu **${contest}**`,
-					color: 0xaef4ae
+					footer: {
+						text: `Contest progress: ${done}/${total} (${Math.floor(done / total * 100)}%)`
+					},
+					color: 0xaef4ae,
 				}
 			]
 		}));
@@ -408,7 +413,7 @@ const getChanges = async () => {
 					let userPronouns = pronouns.get(userName);
 
 					if (userPronouns)
-						await notify(userName, userPronouns, contestName, problemId, problemName);
+						await notify(userName, userPronouns, contestName, problemId, problemName, userEntry.size, problems.size);
 				}
 			}
 		}
@@ -472,4 +477,3 @@ const initialize = async () => {
 };
 
 initialize();
-
