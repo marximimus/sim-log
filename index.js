@@ -270,9 +270,10 @@ const react = (messageId) => {
  * @param {string} user
  * @param {keyof pronounsTranslations} pronouns
  * @param {string} contest
- * @param {string} problem
+ * @param {number} problemId
+ * @param {string} problemName
  */
-const notify = (user, pronouns, contest, problem) => {
+const notify = (user, pronouns, contest, problemId, problemName) => {
 	return new Promise((resolve, reject) => {
 		const result = request(`https://discord.com/api/channels/${channel}/messages`, {
 			method: "POST",
@@ -309,7 +310,7 @@ const notify = (user, pronouns, contest, problem) => {
 		result.end(JSON.stringify({
 			embeds: [
 				{
-					description: `**${user}** właśnie ${pronounsTranslations[pronouns]} zadanie **${problem}** z contestu **${contest}**`,
+					description: `**${user}** właśnie ${pronounsTranslations[pronouns]} zadanie [**${problemName}**](https://sim.13lo.pl/c/p${problemId}) z contestu **${contest}**`,
 					color: 0xaef4ae
 				}
 			]
@@ -407,7 +408,7 @@ const getChanges = async () => {
 					let userPronouns = pronouns.get(userName);
 
 					if (userPronouns)
-						await notify(userName, userPronouns, contestName, problemName);
+						await notify(userName, userPronouns, contestName, problemId, problemName);
 				}
 			}
 		}
@@ -470,5 +471,5 @@ const initialize = async () => {
 	}
 };
 
-initialize();
+// initialize();
 
